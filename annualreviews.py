@@ -1,12 +1,7 @@
-__author__ = 'David Katz'
-__version__ = 'rc2'
+__author__ = 'David-Katz-Wigmore'
+__version__ = 'rc3'
 
-'''Currently this program throws and error when it encounters months Nov or Dec (as input by the user)  This will need
-to be fixed to ensure that this program can be used without modifications in the future
-
-Additionally this program needs some serious cleaning up for PEP-8 compliance as well as elimination of deeply nested
-conditionals and use of global variables.  This is ugly code that just happens to work but will be hard to maintain
-going forward.'''
+#  This is not currently working and needs significantly more debugging.
 
 import re
 
@@ -15,166 +10,167 @@ from xlrd import open_workbook
 from xlrd import xldate_as_tuple
 from xlutils.copy import copy
 from xlwt import easyxf
+from datetime import datetime
+from dateutil.relativedelta import relativedelta
 
-wmonth = []
-month = 0
-wyear = []
-year = 0
-
-def processing(path, m, y):
-    file_path = str(path)
-    rb = open_workbook(file_path)
-    sheet = rb.sheet_by_index(0)
-    wb = copy(rb)
-    editsheet = wb.add_sheet('Processed')
-    month_entry = int(m)
-    year_entry = int(y)
-
-    def working_month():
+class FindReviewDates:
+    def __init__(self, edit_month, edit_year, path):
         """
-        the workingMonth function advances the month by two respecting the 12 month year
+
+        :param edit_month: a 1 - 2 digit int
+        :param edit_year: a 4 digit int
+        :param path: a file path
+        """
+        self.working_date = datetime(year=edit_year, month=edit_month, day=1) + relativedelta(months=+2)
+        self.working_month = self.working_date.month
+        self.working_year = self.working_date.year
+
+        self.read_book = open_workbook(path)
+        self.sheet = self.read_book.sheet_by_index(0)
+        self.workbook = copy(self.read_book)
+        self.edit_sheet = self.workbook.add_sheet("Processed")
+
+    def processing(self):
+        """
+        This calls all the methods needed to actually process the report.
         :return:
         """
-        global wmonth
-        global month
-        if month_entry == 11:
-            month = 1
-            wmonth.append(1)
-        elif month_entry == 12:
-            month = 2
-            wmonth.append(2)
-        else:
-            c = month_entry + 2
-            month = c
-            wmonth.append(c)
+        self.write_headers()
+        self.write_body()
+        self.save_sheet()
 
-    def working_year():
+    def month_check(self, date_in_question):
         """
-        the workingYear function advances they wyear variable by 1 in the event that the wmonth is Dec. or Nov.
-        :return:
-        """
-        global year
-        if (month == 11) or (month == 12):
-            year = year_entry + 1
-        else:
-            year = year_entry
 
-    def datecheck(d):
+        :param date_in_question: a python date object
+        :return: boolean
         """
-        dateCheck will reduce a date tuple to only the month data then look at a given date and return 'true' if the
-        date's month is equal to the working month
-        :param d:
-        :return:
-        """
-        global wmonth
-        dlist = list(d)
-        dlist.pop(0)
-        dlist.pop(3)
-        dlist.pop(2)
-        dlist.pop(2)
-        dlist.pop(1)
-        print(dlist)
-        print(wmonth)
-        if dlist == wmonth:
+        if datetime.date(date_in_question).month == self.working_month:
             return True
         else:
             return False
 
-    def yearcheck(y):
-        dlist = list(y)
-        dlist.pop(1)
-        dlist.pop(1)
-        dlist.pop(1)
-        dlist.pop(1)
-        dlist.pop(1)
-        if dlist == wyear:
+    def year_check(self, date_in_question):
+        """
+
+        :param date_in_question: a python date object
+        :return: boolean
+        """
+        if datetime.date(date_in_question).year == self.working_year:
             return True
         else:
             return False
 
-    def dateconvert(r, c):
+    def excel_to_python_date(self, excel_date_object):
         """
-        dateConvert and yearConvert change excel date codes into date tuples so that python can read/process them
-        :param r:
-        :param c:
+
+        :param excel_date_object: excel date float
+        :return: python date object
+        """
+        print(excel_date_object)
+        date_tuple = xldate_as_tuple(excel_date_object, self.read_book.datemode)
+
+        python_datetime = datetime(
+            date_tuple[0],
+            date_tuple[1],
+            date_tuple[2],
+            date_tuple[3],
+            date_tuple[4],
+            date_tuple[5]
+        )
+        return python_datetime
+
+    def write_headers(self):
+        """
+
         :return:
         """
-        print(xldate_as_tuple(sheet.cell(r, c).value, rb.datemode))
-        date_value = xldate_as_tuple(sheet.cell(r, c).value, rb.datemode)
-        return datecheck(date_value)
-
-    def yearconvert(r, c):
-        print("row: {}; coll: {}".format(r, c))
-        date_value = xldate_as_tuple(sheet.cell(r, c).value, rb.datemode)
-        return yearcheck(date_value)
-
-    def writesheet(sheet, editsheet):
-        """
-        writeSheet writes data to the "processed" sheet
-        :param sheet:
-        :param editsheet:
-        :return:
-        """
-        row = 3
-        header = 'Required Annual Review Assessments- by %d / %d' % (month, year)
-        editsheet.write(0, 0, header, easyxf('font: height 400;'))
-        for c in range(0, sheet.ncols):
-            if c == 7:
-                editsheet.write(2, 0, sheet.cell_value(rowx=2, colx=c))
+        header = "Required Annual Review Assessments- Review due by {} / {}".format(
+            self.working_month,
+            self.working_year
+        )
+        self.edit_sheet.write(0, 0, header, easyxf("font: height 400;"))
+        for column in range(0, self.sheet.ncols):
+            if column == 7:
+                self.edit_sheet.write(2, 0, self.sheet.cell_value(rowx=2, colx=column))
             else:
-                editsheet.write(2, c+1, sheet.cell_value(rowx=2, colx=c))
-        for r in range(3, sheet.nrows):
-            if dateconvert(r, 3):
+                self.edit_sheet.write(2, column+1, self.sheet.cell_value(rowx=2, colx=column))
+
+    def write_body(self):
+        """
+
+        :return:
+        """
+        write_row = 3
+        for row in range(3, self.sheet.nrows):
+            if self.month_check(self.excel_to_python_date(self.sheet.cell_value(rowx=row, colx=3))):
                 col = 0
-                for c in range(0, sheet.ncols):
-                    if (c == 4) and (sheet.cell_value(rowx=r, colx=c) != ''):
-                        if yearconvert(r, 4) and datecheck(dateconvert(r, 4)):
-                            editsheet.write(row, c+1, sheet.cell_value(rowx=r, colx=c),
-                                            easyxf('pattern: pattern solid_fill,fore_colour yellow;'))
+                for column in range(0, self.sheet.ncols):
+                    if (column == 4) and (self.sheet.cell_value(rowx=row, colx=column)):
+                        month = self.month_check(self.excel_to_python_date(self.sheet.cell_value(row, column)).month)
+                        year = self.year_check(self.excel_to_python_date(self.sheet.cell_value(row, column)).year)
+                        if year and month:
+                            self.edit_sheet.write(
+                                write_row,
+                                column + 1,
+                                self.sheet.cell_value(rowx=row, colx=column),
+                                easyxf("pattern: pattern solid_fill, fore_colour yellow;")
+                            )
                             col += 1
                         else:
-                            editsheet.write(row, c+1, sheet.cell_value(rowx=r, colx=c))
-                    elif c == 5:
+                            self.edit_sheet.write(write_row, column + 1, self.sheet.cell_value(rowx=row, colx=column))
+                    elif column == 5:
                         try:
-                            yearconvert(r, 5)
-                            dateconvert(r, 5)
+                            datetime(self.excel_to_python_date(self.sheet.cell_value(rowx=row, colx=column)))
                         except ValueError:
-                            editsheet.write(row, c+1, "No Data Entered",
-                                            easyxf("pattern: pattern solid_fill, fore_colour yellow;"))
-                            col += 1
+                            self.edit_sheet.write(
+                                row,
+                                column + 1,
+                                "No Data Entered",
+                                easyxf("pattern: pattern solid_fill, fore_colour yellow;")
+                            )
+                            column += 1
                         else:
-                            if (yearconvert(r, 5) is False) and (dateconvert(r, 5)):
-                                editsheet.write(row, c+1, sheet.cell_value(rowx=r, colx=c),
-                                                easyxf('pattern: pattern solid_fill, fore_colour yellow;'))
-                                col += 1
+                            if (
+                                        self.year_check(self.excel_to_python_date(
+                                            self.sheet.cell_value(rowx=row, colx=column))) == False
+                            ) and (
+                                    self.month_check(
+                                        self.excel_to_python_date(self.sheet.cell_value(rowx=row, colx=column)))
+                            ):
+                                self.edit_sheet.write(
+                                    write_row,
+                                    column + 1,
+                                    self.sheet.cell_value(rowx=row, colx=column)
+                                )
+                                column += 1
                             else:
-                                editsheet.write(row, c+1, sheet.cell_value(rowx=r, colx=c))
-                    elif c == 7:
+                                self.edit_sheet.write(
+                                    write_row,
+                                    column + 1,
+                                    self.sheet.cell_value(rowx=row, colx=column)
+                                )
+                                column += 1
+                    elif column == 7:
                         try:
-                            g = re.compile("([A-Z][A-Z])")
-                            p = re.search(g, sheet.cell_value(rowx=r, colx=c))
+                            regex_search = re.search('([A-Z][A-Z])',self.sheet.cell_value(rowx=row, colx=column))
                         except Exception:
-                            editsheet.write(row, 0, sheet.cell_value(rowx=r, colx=c))
-                        except AttributeError:
-                            editsheet.write(row, 0, sheet.cell_value(rowx=r, colx=c))
+                            self.edit_sheet.write(write_row, 0, self.sheet.cell_value(rowx=row, colx=column))
+                        except:
+                            raise
                         else:
-                            g = re.compile("([A-Z][A-Z])")
-                            p = re.search(g, sheet.cell_value(rowx=r, colx=c))
-                            print(r)
-                            print(c)
-                            editsheet.write(row, 0, p.group())
+                            self.edit_sheet.write(write_row, 0, regex_search.group())
+                            column += 1
                     else:
-                        print("BONK!")
-                        editsheet.write(row, c+1, sheet.cell_value(rowx=r, colx=c))
-                        col += 1
+                        self.edit_sheet.write(write_row, column + 1, self.sheet.cell_value(rowx=row, colx=column))
+                        column += 1
                 row += 1
-            else:
-                print("OOOF!")
 
-    working_month()
-    working_year()
-    writesheet(sheet, editsheet)
-    wb.save(
-        asksaveasfilename(defaultextension='.xls', initialfile='Required Annual Reviews Assessments (Processed).xls')
-    )
-    print("Processing Complete")
+    def save_sheet(self):
+        """
+
+        :return:
+        """
+        self.workbook.save(
+            asksaveasfilename(defaultextension=".xls", initialfile="Required Annual Reviews Assessment (Processed).xls")
+        )
