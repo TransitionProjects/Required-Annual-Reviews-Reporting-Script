@@ -1,176 +1,104 @@
-__author__ = 'David-Katz-Wigmore'
-__version__ = 'rc3'
+__author__ = "David Katz-Wigmore"
+__version__ = "rc4"
 
-#  This is not currently working and needs significantly more debugging.
+import pandas as pd
 
-import re
-
-from tkinter.filedialog import asksaveasfilename
-from xlrd import open_workbook
-from xlrd import xldate_as_tuple
-from xlutils.copy import copy
-from xlwt import easyxf
-from datetime import datetime
+from datetime import date
 from dateutil.relativedelta import relativedelta
+from tkinter.filedialog import asksaveasfilename
 
 class FindReviewDates:
-    def __init__(self, edit_month, edit_year, path):
-        """
-
-        :param edit_month: a 1 - 2 digit int
-        :param edit_year: a 4 digit int
-        :param path: a file path
-        """
-        self.working_date = datetime(year=edit_year, month=edit_month, day=1) + relativedelta(months=+2)
-        self.working_month = self.working_date.month
-        self.working_year = self.working_date.year
-
-        self.read_book = open_workbook(path)
-        self.sheet = self.read_book.sheet_by_index(0)
-        self.workbook = copy(self.read_book)
-        self.edit_sheet = self.workbook.add_sheet("Processed")
-
-    def processing(self):
-        """
-        This calls all the methods needed to actually process the report.
-        :return:
-        """
-        self.write_headers()
-        self.write_body()
-        self.save_sheet()
-
-    def month_check(self, date_in_question):
-        """
-
-        :param date_in_question: a python date object
-        :return: boolean
-        """
-        if datetime.date(date_in_question).month == self.working_month:
-            return True
-        else:
-            return False
-
-    def year_check(self, date_in_question):
-        """
-
-        :param date_in_question: a python date object
-        :return: boolean
-        """
-        if datetime.date(date_in_question).year == self.working_year:
-            return True
-        else:
-            return False
-
-    def excel_to_python_date(self, excel_date_object):
-        """
-
-        :param excel_date_object: excel date float
-        :return: python date object
-        """
-        print(excel_date_object)
-        date_tuple = xldate_as_tuple(excel_date_object, self.read_book.datemode)
-
-        python_datetime = datetime(
-            date_tuple[0],
-            date_tuple[1],
-            date_tuple[2],
-            date_tuple[3],
-            date_tuple[4],
-            date_tuple[5]
+    def __init__(self, file, start_month, start_year):
+        self.year = start_year
+        self.month = start_month
+        self.raw_data = pd.read_excel(
+            file,
+            sheetname="Report 1",
+            skiprows=2,
+            index_col=None,
+            names=[
+                "CT ID",
+                "Client First Name",
+                "Client Last Name",
+                "Entry",
+                "Exit",
+                "Service",
+                "Program",
+                "CM",
+                "CM-End",
+                "Review Date",
+                "Interim or Follow-Up",
+                "Review Type"
+            ]
         )
-        return python_datetime
+        self.start_date = date(year=start_year, month=start_month, day=1)
+        end_date = self.start_date + relativedelta(months=+1)
 
-    def write_headers(self):
+    def highlight_cells(self, data_frame):
         """
+        Highlights cells yellow when their value matches the criteria
 
+        :param data_frame:
         :return:
         """
-        header = "Required Annual Review Assessments- Review due by {} / {}".format(
-            self.working_month,
-            self.working_year
+        (
+                   data_frame["Exit"].month == self.month + relativedelta(month=+1)
+               ) | (
+            data_frame["Service"] < (self.start_date + relativedelta(month=-1))
         )
-        self.edit_sheet.write(0, 0, header, easyxf("font: height 400;"))
-        for column in range(0, self.sheet.ncols):
-            if column == 7:
-                self.edit_sheet.write(2, 0, self.sheet.cell_value(rowx=2, colx=column))
-            else:
-                self.edit_sheet.write(2, column+1, self.sheet.cell_value(rowx=2, colx=column))
+        return ["background-color: yellow"]
 
-    def write_body(self):
+    def find_initials(self,data_frame):
         """
+        Mask for initials using regex
+
+        :param data_frame:
+        :return:
+        """
+        return (data_frame["CM"].str.extract("([A-Z][A-Z])"))
+
+    def process(self):
+        """
+        Actually processes the document.
+
+        Currently has lots of errors.  Needs serious trouble shooting.  Grrr dates == stupid.
 
         :return:
         """
-        write_row = 3
-        for row in range(3, self.sheet.nrows):
-            if self.month_check(self.excel_to_python_date(self.sheet.cell_value(rowx=row, colx=3))):
-                col = 0
-                for column in range(0, self.sheet.ncols):
-                    if (column == 4) and (self.sheet.cell_value(rowx=row, colx=column)):
-                        month = self.month_check(self.excel_to_python_date(self.sheet.cell_value(row, column)).month)
-                        year = self.year_check(self.excel_to_python_date(self.sheet.cell_value(row, column)).year)
-                        if year and month:
-                            self.edit_sheet.write(
-                                write_row,
-                                column + 1,
-                                self.sheet.cell_value(rowx=row, colx=column),
-                                easyxf("pattern: pattern solid_fill, fore_colour yellow;")
-                            )
-                            col += 1
-                        else:
-                            self.edit_sheet.write(write_row, column + 1, self.sheet.cell_value(rowx=row, colx=column))
-                    elif column == 5:
-                        try:
-                            datetime(self.excel_to_python_date(self.sheet.cell_value(rowx=row, colx=column)))
-                        except ValueError:
-                            self.edit_sheet.write(
-                                row,
-                                column + 1,
-                                "No Data Entered",
-                                easyxf("pattern: pattern solid_fill, fore_colour yellow;")
-                            )
-                            column += 1
-                        else:
-                            if (
-                                        self.year_check(self.excel_to_python_date(
-                                            self.sheet.cell_value(rowx=row, colx=column))) == False
-                            ) and (
-                                    self.month_check(
-                                        self.excel_to_python_date(self.sheet.cell_value(rowx=row, colx=column)))
-                            ):
-                                self.edit_sheet.write(
-                                    write_row,
-                                    column + 1,
-                                    self.sheet.cell_value(rowx=row, colx=column)
-                                )
-                                column += 1
-                            else:
-                                self.edit_sheet.write(
-                                    write_row,
-                                    column + 1,
-                                    self.sheet.cell_value(rowx=row, colx=column)
-                                )
-                                column += 1
-                    elif column == 7:
-                        try:
-                            regex_search = re.search('([A-Z][A-Z])',self.sheet.cell_value(rowx=row, colx=column))
-                        except Exception:
-                            self.edit_sheet.write(write_row, 0, self.sheet.cell_value(rowx=row, colx=column))
-                        except:
-                            raise
-                        else:
-                            self.edit_sheet.write(write_row, 0, regex_search.group())
-                            column += 1
-                    else:
-                        self.edit_sheet.write(write_row, column + 1, self.sheet.cell_value(rowx=row, colx=column))
-                        column += 1
-                row += 1
+        cols = [
+            "CM",
+            "CT ID",
+            "Client First Name",
+            "Client Last Name",
+            "Entry",
+            "Exit",
+            "Service",
+            "Program",
+            "CM-End",
+            "Review Date",
+            "Interim or Follow-Up",
+            "Review Type"
+        ]
+        data = self.raw_data
+        data["Entry Year"] = [pd.to_datetime(data["Entry"].tolist()).year]
+        data["Entry Month"] = [pd.to_datetime(data["Entry"].tolist()).month]
+        mask =(data["Entry Year"] != self.year ) & (data["Entry Month"] == self.month)
+        data_masked = data[mask]
+        data_masked["CM"].str.replace("[A-Za-z/s]*",self.find_initials(data_masked), case=False)
+        data_masked.style.apply(self.highlight_cells(data_masked))
+        data_masked.drop("Entry Year")
+        data_masked.drop("Entry Month")
+        data_out = data_masked[cols]
+        data_out.drop("CM-End")
+        return data_out
 
-    def save_sheet(self):
+    def write_to_excel(self):
         """
+        Saves the data frame to an excel document.  Calls the process method so you don't need to.
 
         :return:
         """
-        self.workbook.save(
-            asksaveasfilename(defaultextension=".xls", initialfile="Required Annual Reviews Assessment (Processed).xls")
-        )
+        data_frame = self.process()
+        writer = pd.ExcelWriter(asksaveasfilename(defaultextension=".xlsx"))
+        data_frame.to_excel(writer, sheet_name="Processed")
+        writer.save()

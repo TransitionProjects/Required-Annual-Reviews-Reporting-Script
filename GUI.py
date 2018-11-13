@@ -1,10 +1,18 @@
-__author__ = "dkatz"
-__version__ = "rc2"
+_author__ = "David Katz-Wigmore"
+__version__ = "rc3"
 
 from tkinter import ttk
 from tkinter import *
 from tkinter.filedialog import askopenfilename
-from AnnualReviewsReportRunnerv2 import processing
+from AnnualReviewsReportRunnerv4 import FindReviewDates
+
+def process():
+    a = FindReviewDates(file=path.get(), start_month=month.get(), start_year=year.get())
+    a.write_to_excel()
+
+def open():
+    files = askopenfilename()
+    path.set(files)
 
 root = Tk()
 root.title("Annual Reviews Report Runner")
@@ -17,13 +25,6 @@ mainframe.rowconfigure(0, weight=1)
 path = StringVar()
 month = IntVar()
 year = IntVar()
-
-def process():
-    processing(path=path.get(), m=month.get(), y=year.get())
-
-def open():
-    files = askopenfilename()
-    path.set(files)
 
 ttk.Label(mainframe, text="Path:").grid(column=1, row=1,sticky=W)
 ttk.Entry(mainframe, textvariable=path, width=100).grid(column=1, row=2, columnspan=4, sticky=W)
