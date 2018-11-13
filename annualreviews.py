@@ -5,10 +5,6 @@ This script should be used to process the monthy Required Annual Reviews
 report.
 """
 
-__author__ = "David Marienburg"
-__maintainer__ = "David Marienburg"
-__version__ = "2.0rc1"
-
 import pandas as pd
 
 from datetime import date
