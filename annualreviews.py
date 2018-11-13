@@ -1,104 +1,99 @@
-__author__ = "David Katz-Wigmore"
-__version__ = "rc4"
+__author__ = "David Marienburg"
+__version__ = "rc5"
+
+#  This needs to be run prior to the beginning of the new reporting month
+#  If it is not, you will need to make an alternate version of the 'today' variable
+#  where 'today' == the last day of the proceeding month
+
+from tkinter.filedialog import askopenfilename
+from tkinter.filedialog import asksaveasfilename
+from datetime import date
+from dateutil.relativedelta import relativedelta
 
 import pandas as pd
 
-from datetime import date
-from dateutil.relativedelta import relativedelta
-from tkinter.filedialog import asksaveasfilename
 
-class FindReviewDates:
-    def __init__(self, file, start_month, start_year):
-        self.year = start_year
-        self.month = start_month
-        self.raw_data = pd.read_excel(
-            file,
-            sheetname="Report 1",
-            skiprows=2,
-            index_col=None,
-            names=[
-                "CT ID",
-                "Client First Name",
-                "Client Last Name",
-                "Entry",
-                "Exit",
-                "Service",
-                "Program",
-                "CM",
-                "CM-End",
-                "Review Date",
-                "Interim or Follow-Up",
-                "Review Type"
-            ]
-        )
-        self.start_date = date(year=start_year, month=start_month, day=1)
-        end_date = self.start_date + relativedelta(months=+1)
+def process_reviews():
+    # establish the dates and date ranges required for processing
+    # use this next row if you run the report on or after the first of the month
+    today = date.today() + relativedelta(days=-2)
+    # otherwise leave the today varaible as is
+    # today =  date.today()
+    review_month = (today + relativedelta(months=+2)).month
+    review_year = (today + relativedelta(months=+2)).year
+    first_of_next_month = today.replace(day=+1) + relativedelta(months=+1)
+    last_of_next_month = first_of_next_month + relativedelta(months=+2) + relativedelta(days=-1)
+    last_day_of_current_month = first_of_next_month + relativedelta(days=-1)
+    first_day_of_current_month = first_of_next_month + relativedelta(months=-1)
 
-    def highlight_cells(self, data_frame):
-        """
-        Highlights cells yellow when their value matches the criteria
+    # open the excel output by ServicePoint and convert it to a pandas data frame
+    file = askopenfilename()
+    original_data = pd.read_excel(file, sheet_name="Report 1", header=2) # .drop("CM-End", axis=1)
 
-        :param data_frame:
-        :return:
-        """
-        (
-                   data_frame["Exit"].month == self.month + relativedelta(month=+1)
-               ) | (
-            data_frame["Service"] < (self.start_date + relativedelta(month=-1))
-        )
-        return ["background-color: yellow"]
+    # add a couple of columns to the DataFrame to make the deletion of irrelevant rows
+    original_data["Entry Month"] = original_data["Entry"].dt.month
+    original_data["Entry Year"] = original_data["Entry"].dt.year
+    original_data["Current Month"] = review_month
+    original_data["Current Year"] = review_year
 
-    def find_initials(self,data_frame):
-        """
-        Mask for initials using regex
+    # delete rows that where the entry date is not equal to current month + 2 in previous years
+    cleaned = original_data[
+        ((original_data["Entry Month"] == original_data["Current Month"]) & (
+            original_data["Entry Year"] < original_data["Current Year"]))
+    ].drop(["Entry Month", "Entry Year", "Current Month", "Current Year"], axis=1)
 
-        :param data_frame:
-        :return:
-        """
-        return (data_frame["CM"].str.extract("([A-Z][A-Z])"))
+    # re-organize the columns so that CM name is the first column
+    sorted = cleaned[[
+        "CM",
+        "CT ID",
+        "Client First Name",
+        "Client Last Name",
+        "Entry",
+        "Exit",
+        "Service",
+        "Program",
+        "Review Date",
+        "Interim or Follow-Up",
+        "Review Type"
+    ]].drop_duplicates(subset="CT ID", keep="first")
 
-    def process(self):
-        """
-        Actually processes the document.
+    # create the xlsx sheet to allow for formatting
+    writer = pd.ExcelWriter(asksaveasfilename(), engine="xlsxwriter", date_format="mm/dd/yyyy")
+    sorted.to_excel(writer, sheet_name="Processed", index=False)
+    original_data.to_excel(writer, sheet_name="Raw Data", index=False)
+    workbook = writer.book
+    worksheet = writer.sheets["Processed"]
 
-        Currently has lots of errors.  Needs serious trouble shooting.  Grrr dates == stupid.
+    # establish the format for highlighting cells
+    error_format = workbook.add_format({
+        "bold": True,
+        "bg_color": "yellow",
+        "fg_color": "yellow"
+    })
 
-        :return:
-        """
-        cols = [
-            "CM",
-            "CT ID",
-            "Client First Name",
-            "Client Last Name",
-            "Entry",
-            "Exit",
-            "Service",
-            "Program",
-            "CM-End",
-            "Review Date",
-            "Interim or Follow-Up",
-            "Review Type"
-        ]
-        data = self.raw_data
-        data["Entry Year"] = [pd.to_datetime(data["Entry"].tolist()).year]
-        data["Entry Month"] = [pd.to_datetime(data["Entry"].tolist()).month]
-        mask =(data["Entry Year"] != self.year ) & (data["Entry Month"] == self.month)
-        data_masked = data[mask]
-        data_masked["CM"].str.replace("[A-Za-z/s]*",self.find_initials(data_masked), case=False)
-        data_masked.style.apply(self.highlight_cells(data_masked))
-        data_masked.drop("Entry Year")
-        data_masked.drop("Entry Month")
-        data_out = data_masked[cols]
-        data_out.drop("CM-End")
-        return data_out
+    # loop through the values in the exit date column highlighting cells where exit date is during the coming month
+    for row in sorted.index:
+        # these just simplified the typing of the if statements
+        exit_date = pd.to_datetime(sorted.ix[row, "Exit"]).date()
+        service_date = pd.to_datetime(sorted.ix[row, "Service"]).date()
 
-    def write_to_excel(self):
-        """
-        Saves the data frame to an excel document.  Calls the process method so you don't need to.
+        # highlighting cells where exit date is during the coming month
+        if pd.isnull(sorted.ix[row, "Exit"]):
+            pass
+        elif ((first_of_next_month <= exit_date) and (exit_date <= last_of_next_month)):
+            worksheet.write(row, 5, sorted.ix(row, "Exit"), error_format)
+        else:
+            pass
 
-        :return:
-        """
-        data_frame = self.process()
-        writer = pd.ExcelWriter(asksaveasfilename(defaultextension=".xlsx"))
-        data_frame.to_excel(writer, sheet_name="Processed")
-        writer.save()
+        # highlighting cells where service is prior to the last 30 days
+        if pd.isnull(service_date):
+            worksheet.write(row, 7, sorted.ix[row, "Service"], error_format)
+        elif first_day_of_current_month > service_date:
+            worksheet.write(row, 7, sorted.ix[row, "Service"], error_format)
+        else:
+            pass
+
+    writer.save()
+
+if __name__ == "__main__":
+    process_reviews()
