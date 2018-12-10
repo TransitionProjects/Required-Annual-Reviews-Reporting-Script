@@ -1,5 +1,5 @@
 __author__ = "David Marienburg"
-__version__ = "rc6"
+__version__ = "2.0"
 """
 This script should be used to process the monthy Required Annual Reviews
 report.
