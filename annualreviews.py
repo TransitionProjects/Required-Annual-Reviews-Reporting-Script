@@ -1,5 +1,5 @@
 __author__ = "David Marienburg"
-__version__ = "2.0"
+__version__ = "2.1"
 """
 This script should be used to process the monthy Required Annual Reviews
 report.
@@ -91,13 +91,20 @@ class AnnualReviewReport:
         # exits that ended prior to the review period.
         good_reviews = entries[
             (
-                entries["Entry Exit Exit Date"].isna() |
-                (entries["Entry Exit Exit Date"] > entries["Review Period Start"])
-            ) &
-            (entries["Entry Exit Review Type"] == "Annual Assessment") &
+                (
+                    entries["Entry Exit Exit Date"].isna() |
+                    (entries["Entry Exit Exit Date"] > entries["Review Period End"])
+                ) &
+                (entries["Entry Exit Review Type"] == "Annual Assessment") &
+                (
+                    (entries["Review Period Start"] < entries["Entry Exit Review Date"]) &
+                    (entries["Review Period End"] > entries["Entry Exit Review Date"])
+                )
+            ) |
             (
-                (entries["Review Period Start"] < entries["Entry Exit Review Date"]) &
-                (entries["Review Period End"] > entries["Entry Exit Review Date"])
+
+                (entries["Entry Exit Exit Date"] > entries["Review Period Start"]) &
+                (entries["Entry Exit Exit Date"] < entries["Review Period End"])
             )
         ].drop_duplicates(
             subset=["Client Unique Id", "Entry Exit Uid"]
@@ -201,13 +208,19 @@ class AnnualReviewReport:
         # exits that ended prior to the review period.
         good_reviews = reviewable_df[
             (
-                reviewable_df["Entry Exit Exit Date"].isna() |
-                (reviewable_df["Entry Exit Exit Date"] > reviewable_df["Review Period Start"])
-            ) &
-            (reviewable_df["Entry Exit Review Type"] == "Annual Assessment") &
+                (
+                    reviewable_df["Entry Exit Exit Date"].isna() |
+                    (reviewable_df["Entry Exit Exit Date"] > reviewable_df["Review Period End"])
+                ) &
+                (reviewable_df["Entry Exit Review Type"] == "Annual Assessment") &
+                (
+                    (reviewable_df["Review Period Start"] < reviewable_df["Entry Exit Review Date"]) &
+                    (reviewable_df["Review Period End"] > reviewable_df["Entry Exit Review Date"])
+                )
+            ) |
             (
-                (reviewable_df["Review Period Start"] < reviewable_df["Entry Exit Review Date"]) &
-                (reviewable_df["Review Period End"] > reviewable_df["Entry Exit Review Date"])
+                (reviewable_df["Entry Exit Exit Date"] > reviewable_df["Review Period Start"]) &
+                (reviewable_df["Entry Exit Exit Date"] < reviewable_df["Review Period End"])
             )
         ].drop_duplicates(
             subset=["Client Unique Id", "Entry Exit Uid"]
